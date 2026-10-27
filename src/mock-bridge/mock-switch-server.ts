@@ -146,9 +146,14 @@ export class InMemorySwitchBridge {
         continue;
       }
 
-      const roleHeldByAgent = room.roles
-        .filter((r) => r.holder_agent_id === agentId)
-        .map((r) => `@${r.name}`);
+      const roleHeldByAgent: string[] = [];
+      for (const r of this.rooms.values()) {
+        for (const role of r.roles) {
+          if (role.holder_agent_id === agentId) {
+            roleHeldByAgent.push(`@${role.name}`);
+          }
+        }
+      }
 
       const addressed =
         params.body.includes(`@${agentId}`) ||

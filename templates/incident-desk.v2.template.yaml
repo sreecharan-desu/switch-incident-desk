@@ -1,0 +1,108 @@
+# Incident Desk in version 2 of the Switch template language.
+version: 2
+
+params:
+  team:
+    type: string
+    label: Service prefix
+    description: Prefix for the rooms and agents created by this template
+    default: payments
+  repo_url:
+    type: string
+    label: Service repository URL
+    description: Git repository cloned into each agent's working directory
+    default: https://github.com/sreecharan-desu/switch-incident-desk
+  bridge:
+    type: bridge
+    label: Messaging app
+    description: Where the rooms are mirrored
+    default: [Slack, $first]
+    required: false
+  provider:
+    type: provider
+    description: Coding agent runtime
+    default: [claude, codex, opencode]
+    input: advanced
+  machine:
+    type: machine
+    description: Machine that runs both agents
+    default: [$first]
+    input: advanced
+  directory:
+    type: directory
+    description: Working directory pattern
+    default: "{$agents_dir}/{agent}"
+    input: advanced
+
+form:
+  advanced: { label: Advanced, open: false }
+
+resources:
+  triager:
+    type: agent
+    display_name: "{team}-incident-triager"
+    description: >-
+      Correlates production alerts in {team}-incidents against recent deploys in
+      {team}-releases and maintains room-scoped incident timelines.
+    instructions: |
+      You hold `incident-commander` in {team}-incidents. Follow the room link to
+      {team}-releases to correlate alerts against `release-ledger.md`, maintain
+      `incident-<id>.md` in the incidents room, and hand off commit checks to
+      @regression-checker.
+    provider: "{provider}"
+    machine: "{machine}"
+    directory: "{directory}"
+    repo: "{repo_url}"
+    addressing: anyone
+
+  auditor:
+    type: agent
+    display_name: "{team}-release-auditor"
+    description: >-
+      Holds the exclusive release-manager role in {team}-releases and verifies
+      suspect commits and human-approved rollbacks in {team}-incidents.
+    instructions: |
+      Ground every answer in the repository and `release-ledger.md`. Prepare
+      rollback plans when addressed by @incident-commander, and gate execution on
+      explicit confirmation from {$creator}.
+    provider: "{provider}"
+    machine: "{machine}"
+    directory: "{directory}"
+    repo: "{repo_url}"
+    addressing:
+      - value: { anyone_in: [releases_room, incidents_room] }
+
+  releases_room:
+    type: room
+    name: "{team}-releases"
+    description: "Day-to-day releases and release ledger for {team}"
+    channel_type: channel_private
+    bridge: "{bridge}"
+    agents: [auditor]
+    users:
+      - if: "{bridge}"
+        value: ["{$creator}"]
+      - value: []
+    instructions: |
+      This room tracks production deployments for {team}. Reply in threads and
+      keep `release-ledger.md` current after every deploy or rollback.
+    kickoff: |
+      @{auditor.name} assume `release-manager` and confirm `release-ledger.md` is ready.
+
+  incidents_room:
+    type: room
+    name: "{team}-incidents"
+    description: "Active incident triage and rollback coordination for {team}"
+    channel_type: channel_private
+    bridge: "{bridge}"
+    agents: [triager, auditor]
+    users:
+      - if: "{bridge}"
+        value: ["{$creator}"]
+      - value: []
+    instructions: |
+      This room handles live production incidents for {team}. Keep updates in the
+      incident thread and record timeline state in `incident-<id>.md`.
+    kickoff: |
+      @{triager.name} and @{auditor.name}: introduce yourselves in one line and
+      confirm your roles (`incident-commander` and `regression-checker`).
